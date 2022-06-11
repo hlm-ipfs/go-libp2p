@@ -263,7 +263,7 @@ func (s *Swarm) addConn(tc transport.CapableConn, dir network.Direction) (*Conn,
 	}
 
 	// we ONLY check upgraded connections here so we can send them a Disconnect message.
-	// If we do this in the Upgrader, we will not be able to do this.
+	// If we do this in the upgrader, we will not be able to do this.
 	if s.gater != nil {
 		if allow, _ := s.gater.InterceptUpgraded(c); !allow {
 			// TODO Send disconnect with reason here

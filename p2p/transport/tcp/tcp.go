@@ -13,7 +13,7 @@ import (
 
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/transport"
+	tpt "github.com/libp2p/go-libp2p-core/transport"
 
 	logging "github.com/ipfs/go-log/v2"
 	ma "github.com/multiformats/go-multiaddr"
@@ -91,27 +91,27 @@ func (ll *tcpListener) Accept() (manet.Conn, error) {
 	return c, nil
 }
 
-type Option func(*TcpTransport) error
+type Option func(*transport) error
 
 func DisableReuseport() Option {
-	return func(tr *TcpTransport) error {
+	return func(tr *transport) error {
 		tr.disableReuseport = true
 		return nil
 	}
 }
 
 func WithConnectionTimeout(d time.Duration) Option {
-	return func(tr *TcpTransport) error {
+	return func(tr *transport) error {
 		tr.connectTimeout = d
 		return nil
 	}
 }
 
-// TcpTransport is the TCP transport.
-type TcpTransport struct {
+// transport is the TCP transport.
+type transport struct {
 	// Connection upgrader for upgrading insecure stream connections to
 	// secure multiplex connections.
-	upgrader transport.Upgrader
+	upgrader tpt.Upgrader
 
 	// Explicitly disable reuseport.
 	disableReuseport bool
@@ -124,15 +124,15 @@ type TcpTransport struct {
 	reuse reuseport.Transport
 }
 
-var _ transport.Transport = &TcpTransport{}
+var _ tpt.Transport = &transport{}
 
 // NewTCPTransport creates a tcp transport object that tracks dialers and listeners
 // created. It represents an entire TCP stack (though it might not necessarily be).
-func NewTCPTransport(upgrader transport.Upgrader, rcmgr network.ResourceManager, opts ...Option) (*TcpTransport, error) {
+func NewTCPTransport(upgrader tpt.Upgrader, rcmgr network.ResourceManager, opts ...Option) (*transport, error) {
 	if rcmgr == nil {
 		rcmgr = network.NullResourceManager
 	}
-	tr := &TcpTransport{
+	tr := &transport{
 		upgrader:       upgrader,
 		connectTimeout: defaultConnectTimeout, // can be set by using the WithConnectionTimeout option
 		rcmgr:          rcmgr,
@@ -149,11 +149,11 @@ var dialMatcher = mafmt.And(mafmt.IP, mafmt.Base(ma.P_TCP))
 
 // CanDial returns true if this transport believes it can dial the given
 // multiaddr.
-func (t *TcpTransport) CanDial(addr ma.Multiaddr) bool {
+func (t *transport) CanDial(addr ma.Multiaddr) bool {
 	return dialMatcher.Matches(addr)
 }
 
-func (t *TcpTransport) maDial(ctx context.Context, raddr ma.Multiaddr) (manet.Conn, error) {
+func (t *transport) maDial(ctx context.Context, raddr ma.Multiaddr) (manet.Conn, error) {
 	// Apply the deadline iff applicable
 	if t.connectTimeout > 0 {
 		var cancel context.CancelFunc
@@ -169,7 +169,7 @@ func (t *TcpTransport) maDial(ctx context.Context, raddr ma.Multiaddr) (manet.Co
 }
 
 // Dial dials the peer at the remote address.
-func (t *TcpTransport) Dial(ctx context.Context, raddr ma.Multiaddr, p peer.ID) (transport.CapableConn, error) {
+func (t *transport) Dial(ctx context.Context, raddr ma.Multiaddr, p peer.ID) (tpt.CapableConn, error) {
 	connScope, err := t.rcmgr.OpenConnection(network.DirOutbound, true)
 	if err != nil {
 		log.Debugw("resource manager blocked outgoing connection", "peer", p, "addr", raddr, "error", err)
@@ -203,11 +203,11 @@ func (t *TcpTransport) Dial(ctx context.Context, raddr ma.Multiaddr, p peer.ID) 
 }
 
 // UseReuseport returns true if reuseport is enabled and available.
-func (t *TcpTransport) UseReuseport() bool {
+func (t *transport) UseReuseport() bool {
 	return !t.disableReuseport && ReuseportIsAvailable()
 }
 
-func (t *TcpTransport) maListen(laddr ma.Multiaddr) (manet.Listener, error) {
+func (t *transport) maListen(laddr ma.Multiaddr) (manet.Listener, error) {
 	if t.UseReuseport() {
 		return t.reuse.Listen(laddr)
 	}
@@ -215,7 +215,7 @@ func (t *TcpTransport) maListen(laddr ma.Multiaddr) (manet.Listener, error) {
 }
 
 // Listen listens on the given multiaddr.
-func (t *TcpTransport) Listen(laddr ma.Multiaddr) (transport.Listener, error) {
+func (t *transport) Listen(laddr ma.Multiaddr) (tpt.Listener, error) {
 	list, err := t.maListen(laddr)
 	if err != nil {
 		return nil, err
@@ -225,15 +225,15 @@ func (t *TcpTransport) Listen(laddr ma.Multiaddr) (transport.Listener, error) {
 }
 
 // Protocols returns the list of terminal protocols this transport can dial.
-func (t *TcpTransport) Protocols() []int {
+func (t *transport) Protocols() []int {
 	return []int{ma.P_TCP}
 }
 
 // Proxy always returns false for the TCP transport.
-func (t *TcpTransport) Proxy() bool {
+func (t *transport) Proxy() bool {
 	return false
 }
 
-func (t *TcpTransport) String() string {
+func (t *transport) String() string {
 	return "TCP"
 }

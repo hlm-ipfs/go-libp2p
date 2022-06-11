@@ -58,7 +58,7 @@ func WithResourceManager(m network.ResourceManager) Option {
 	}
 }
 
-// Upgrader is a multistream upgrader that can upgrade an underlying connection
+// upgrader is a multistream upgrader that can upgrade an underlying connection
 // to a full transport connection (secure and multiplexed).
 type upgrader struct {
 	secure sec.SecureMuxer
