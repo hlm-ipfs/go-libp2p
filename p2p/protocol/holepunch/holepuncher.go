@@ -24,8 +24,8 @@ import (
 var ErrHolePunchActive = errors.New("another hole punching attempt to this peer is active")
 
 const (
-	dialTimeout = 5 * time.Second
-	maxRetries  = 3
+	dialTimeout = 10 * time.Second
+	maxRetries  = 6
 )
 
 // The holePuncher is run on the peer that's behind a NAT / Firewall.
