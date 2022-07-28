@@ -57,7 +57,7 @@ func addrsFromBytes(bzs [][]byte) []ma.Multiaddr {
 func holePunchConnect(ctx context.Context, host host.Host, pi peer.AddrInfo, isClient bool) error {
 	holePunchCtx := network.WithSimultaneousConnect(ctx, isClient, "hole-punching")
 	forceDirectConnCtx := network.WithForceDirectDial(holePunchCtx, "hole-punching")
-	dialCtx, cancel := context.WithTimeout(forceDirectConnCtx, dialTimeout)
+	dialCtx, cancel := context.WithTimeout(forceDirectConnCtx, DialTimeout)
 	defer cancel()
 
 	if err := host.Connect(dialCtx, pi); err != nil {

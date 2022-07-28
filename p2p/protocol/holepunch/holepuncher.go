@@ -23,9 +23,9 @@ import (
 // ErrHolePunchActive is returned from DirectConnect when another hole punching attempt is currently running
 var ErrHolePunchActive = errors.New("another hole punching attempt to this peer is active")
 
-const (
-	dialTimeout = 5 * time.Second
-	maxRetries  = 3
+var (
+	DialTimeout = 5 * time.Second
+	MaxRetries  = 3
 )
 
 // The holePuncher is run on the peer that's behind a NAT / Firewall.
@@ -111,7 +111,7 @@ func (hp *holePuncher) directConnect(rp peer.ID) error {
 	for _, a := range hp.host.Peerstore().Addrs(rp) {
 		if manet.IsPublicAddr(a) && !isRelayAddress(a) {
 			forceDirectConnCtx := network.WithForceDirectDial(hp.ctx, "hole-punching")
-			dialCtx, cancel := context.WithTimeout(forceDirectConnCtx, dialTimeout)
+			dialCtx, cancel := context.WithTimeout(forceDirectConnCtx, DialTimeout)
 
 			tstart := time.Now()
 			// This dials *all* public addresses from the peerstore.
@@ -132,7 +132,7 @@ func (hp *holePuncher) directConnect(rp peer.ID) error {
 	log.Debugw("got inbound proxy conn", "peer", rp)
 
 	// hole punch
-	for i := 0; i < maxRetries; i++ {
+	for i := 0; i < MaxRetries; i++ {
 		addrs, rtt, err := hp.initiateHolePunch(rp)
 		if err != nil {
 			log.Debugw("hole punching failed", "peer", rp, "error", err)

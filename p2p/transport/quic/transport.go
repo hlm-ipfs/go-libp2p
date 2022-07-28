@@ -10,45 +10,57 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/hkdf"
-
-	p2ptls "github.com/libp2p/go-libp2p/p2p/security/tls"
-
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/connmgr"
 	ic "github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/pnet"
 	tpt "github.com/libp2p/go-libp2p-core/transport"
-
+	p2ptls "github.com/libp2p/go-libp2p/p2p/security/tls"
+	"github.com/lucas-clemente/quic-go"
+	"github.com/minio/sha256-simd"
 	ma "github.com/multiformats/go-multiaddr"
 	mafmt "github.com/multiformats/go-multiaddr-fmt"
 	manet "github.com/multiformats/go-multiaddr/net"
-
-	logging "github.com/ipfs/go-log/v2"
-	"github.com/lucas-clemente/quic-go"
-	"github.com/minio/sha256-simd"
+	"golang.org/x/crypto/hkdf"
 )
 
 var log = logging.Logger("quic-transport")
 
 var ErrHolePunching = errors.New("hole punching attempted; no active dial")
 
-var quicDialContext = quic.DialContext // so we can mock it in tests
+var quicDialContext = quic.DialEarlyContext // so we can mock it in tests
 
 var HolePunchTimeout = 5 * time.Second
 
-var quicConfig = &quic.Config{
+var QuicConfig = &quic.Config{
 	MaxIncomingStreams:         256,
 	MaxIncomingUniStreams:      -1,             // disable unidirectional streams
 	MaxStreamReceiveWindow:     10 * (1 << 20), // 10 MB
 	MaxConnectionReceiveWindow: 15 * (1 << 20), // 15 MB
-	AcceptToken: func(clientAddr net.Addr, _ *quic.Token) bool {
+	AcceptToken: func(clientAddr net.Addr, token *quic.Token) bool {
 		// TODO(#6): require source address validation when under load
-		return true
+		if token == nil {
+			return false
+		}
+		validity := time.Hour * 24
+		if token.IsRetryToken {
+			validity = time.Second * 10
+		}
+		if time.Now().After(token.SentTime.Add(validity)) {
+			return false
+		}
+		var sourceAddr string
+		if udpAddr, ok := clientAddr.(*net.UDPAddr); ok {
+			sourceAddr = udpAddr.IP.String()
+		} else {
+			sourceAddr = clientAddr.String()
+		}
+		return sourceAddr == token.RemoteAddr
 	},
-	KeepAlive: true,
-	Versions:  []quic.VersionNumber{quic.VersionDraft29, quic.Version1},
+	KeepAlivePeriod: time.Second * 5,
+	Versions:        []quic.VersionNumber{quic.VersionDraft29, quic.Version1},
 }
 
 const statelessResetKeyInfo = "libp2p quic stateless reset key"
@@ -135,7 +147,7 @@ type activeHolePunch struct {
 
 // NewTransport creates a new QUIC transport
 func NewTransport(key ic.PrivKey, psk pnet.PSK, gater connmgr.ConnectionGater, rcmgr network.ResourceManager) (tpt.Transport, error) {
-	if len(psk) > 0 {
+	if psk = nil; len(psk) > 0 {
 		log.Error("QUIC doesn't support private networks yet.")
 		return nil, errors.New("QUIC doesn't support private networks yet")
 	}
@@ -154,7 +166,7 @@ func NewTransport(key ic.PrivKey, psk pnet.PSK, gater connmgr.ConnectionGater, r
 	if rcmgr == nil {
 		rcmgr = network.NullResourceManager
 	}
-	config := quicConfig.Clone()
+	config := QuicConfig.Clone()
 	keyBytes, err := key.Raw()
 	if err != nil {
 		return nil, err
@@ -164,7 +176,9 @@ func NewTransport(key ic.PrivKey, psk pnet.PSK, gater connmgr.ConnectionGater, r
 	if _, err := io.ReadFull(keyReader, config.StatelessResetKey); err != nil {
 		return nil, err
 	}
-	config.Tracer = tracer
+	if config.Tracer == nil {
+		config.Tracer = tracer
+	}
 
 	tr := &transport{
 		privKey:      key,
@@ -214,6 +228,11 @@ func (t *transport) Dial(ctx context.Context, raddr ma.Multiaddr, p peer.ID) (tp
 	pconn, err := t.connManager.Dial(netw, addr)
 	if err != nil {
 		return nil, err
+	}
+	if ok, _, _ := network.GetSimultaneousConnect(ctx); ok {
+		if err = t.preHole(pconn, addr); err != nil {
+			return nil, err
+		}
 	}
 	qconn, err := quicDialContext(ctx, pconn, addr, host, tlsConf, t.clientConfig)
 	if err != nil {
