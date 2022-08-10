@@ -3,6 +3,7 @@ package swarm
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -38,7 +39,12 @@ type activeDial struct {
 
 func (ad *activeDial) close() {
 	ad.cancel()
-	close(ad.reqch)
+
+	select {
+	case <-ad.reqch:
+	default:
+		close(ad.reqch)
+	}
 }
 
 func (ad *activeDial) dial(ctx context.Context) (*Conn, error) {
@@ -101,8 +107,12 @@ func (ds *dialSync) Dial(ctx context.Context, p peer.ID) (*Conn, error) {
 		defer ds.mutex.Unlock()
 		ad.refCnt--
 		if ad.refCnt == 0 {
-			ad.close()
 			delete(ds.dials, p)
+
+			go func() {
+				time.Sleep(time.Second * 10) //休眠10s等待其他的dial(addr)返回conn
+				ad.close()
+			}()
 		}
 	}()
 	return ad.dial(ctx)
