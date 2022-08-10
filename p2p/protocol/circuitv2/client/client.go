@@ -33,7 +33,7 @@ type Client struct {
 	incoming chan accept
 
 	mx          sync.Mutex
-	activeDials map[peer.ID]*completion
+	activeDials map[string]*completion
 	hopCount    map[peer.ID]int
 }
 
@@ -58,7 +58,7 @@ func New(h host.Host, upgrader transport.Upgrader) (*Client, error) {
 		host:        h,
 		upgrader:    upgrader,
 		incoming:    make(chan accept),
-		activeDials: make(map[peer.ID]*completion),
+		activeDials: make(map[string]*completion),
 		hopCount:    make(map[peer.ID]int),
 	}
 	cl.ctx, cl.ctxCancel = context.WithCancel(context.Background())

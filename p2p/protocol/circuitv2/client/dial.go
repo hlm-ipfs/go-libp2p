@@ -72,11 +72,12 @@ func (c *Client) dial(ctx context.Context, a ma.Multiaddr, p peer.ID) (*Conn, er
 
 	// deduplicate active relay dials to the same peer
 retry:
+	peerKey := options.builder(p, rinfo)
 	c.mx.Lock()
-	dedup, active := c.activeDials[p]
+	dedup, active := c.activeDials[peerKey]
 	if !active {
 		dedup = &completion{ch: make(chan struct{}), relay: rinfo.ID}
-		c.activeDials[p] = dedup
+		c.activeDials[peerKey] = dedup
 	}
 	c.mx.Unlock()
 
@@ -110,7 +111,7 @@ retry:
 	c.mx.Lock()
 	dedup.err = err
 	close(dedup.ch)
-	delete(c.activeDials, p)
+	delete(c.activeDials, peerKey)
 	c.mx.Unlock()
 
 	return conn, err
