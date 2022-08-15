@@ -110,7 +110,7 @@ func (ds *dialSync) Dial(ctx context.Context, p peer.ID) (*Conn, error) {
 			delete(ds.dials, p)
 
 			go func() {
-				time.Sleep(time.Second * 10) //休眠10s等待其他的dial(addr)返回conn
+				time.Sleep(options.dialDelay) //等待其他的dial(addr)返回conn
 				ad.close()
 			}()
 		}
